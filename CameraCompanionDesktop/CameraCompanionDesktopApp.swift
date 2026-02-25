@@ -35,9 +35,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             // 使用系统相机图标
             let image = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Camera Companion")
-            image?.isTemplate = false // 禁用模板模式，使用原始颜色
             button.image = image
-            button.title = "" // 清除emoji
+            button.title = ""
         }
         
         // 创建菜单
