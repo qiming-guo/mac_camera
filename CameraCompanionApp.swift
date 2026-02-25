@@ -13,7 +13,6 @@ import AVKit
 import Vision
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem!
     var captureSession: AVCaptureSession?
     var httpServer: NWListener?
     var videoOutput: AVCaptureVideoDataOutput?
@@ -38,7 +37,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var audioCaptureDevice: AVCaptureDevice?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        setupStatusBar()
         setupCamera()
         startHTTPServer()
         
@@ -46,25 +44,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.saveFrameForStream()
         }
-    }
-    
-    func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
-        if let button = statusItem.button {
-            button.title = "📷 Camera"
-        }
-        
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "拍照", action: #selector(capturePhoto), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "开始录像", action: #selector(startRecording), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "停止录像", action: #selector(stopRecording), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "开启摄像头", action: #selector(startCamera), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "关闭摄像头", action: #selector(stopCamera), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
-        
-        statusItem.menu = menu
     }
     
     func setupCamera() {
@@ -726,11 +705,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
     
-    @objc func quit() {
-        stopCamera()
-        httpServer?.cancel()
-        NSApplication.shared.terminate(nil)
-    }
+
 }
 
 extension AppDelegate: AVCaptureVideoDataOutputSampleBufferDelegate {
