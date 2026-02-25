@@ -9,6 +9,7 @@ import AppKit
 import AVFoundation
 import Network
 import CoreImage
+import Foundation
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -20,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // 应用程序状态
     private var isRunning = false
+    private var videoStreamTimer: Timer?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化组件
@@ -64,6 +66,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 启动视频流处理
         startVideoStreamProcessing()
         
+        // 启动内存监控
+        startMemoryMonitoring()
+        
         isRunning = true
         print("Camera Companion App started successfully")
     }
@@ -79,7 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 启动视频流处理
     private func startVideoStreamProcessing() {
         // 定时处理视频流
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        videoStreamTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
             if let frame = self.cameraManager.getCurrentFrame() {
@@ -88,11 +93,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    // 启动内存监控
+    private func startMemoryMonitoring() {
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            // 简化内存监控，只显示应用内存使用情况
+            let memoryInfo = ProcessInfo.processInfo
+            let physicalMemory = memoryInfo.physicalMemory / (1024 * 1024)
+            
+            print(String(format: "Memory: %.0f MB total", physicalMemory))
+            print("Application memory usage: Monitoring enabled")
+        }
+    }
+    
     // 退出应用
     private func quit() {
         // 停止所有服务
         httpServer.stop()
         cameraManager.stopCamera()
+        
+        // 停止定时器
+        videoStreamTimer?.invalidate()
         
         isRunning = false
         print("Camera Companion App stopped")

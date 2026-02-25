@@ -19,6 +19,10 @@ class HTTPServer {
     private var currentCaptureData: Data?
     private let dataLock = NSLock()
     
+    // 连接管理
+    private var activeConnections: [NWConnection] = []
+    private let connectionLock = NSLock()
+    
     // 初始化
     init(cameraManager: CameraManager, imageProcessor: ImageProcessor, videoRecorder: VideoRecorder) {
         self.cameraManager = cameraManager
@@ -57,6 +61,16 @@ class HTTPServer {
     
     // 停止服务器
     func stop() {
+        // 关闭所有活动连接
+        connectionLock.lock()
+        let connections = activeConnections
+        activeConnections.removeAll()
+        connectionLock.unlock()
+        
+        for connection in connections {
+            connection.cancel()
+        }
+        
         httpServer?.cancel()
         httpServer = nil
     }
@@ -77,24 +91,57 @@ class HTTPServer {
     
     // 处理连接
     private func handleConnection(_ connection: NWConnection) {
-        connection.stateUpdateHandler = { state in
+        // 添加到活动连接集合
+        connectionLock.lock()
+        activeConnections.append(connection)
+        connectionLock.unlock()
+        
+        connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                self.receiveRequest(on: connection)
+                self?.receiveRequest(on: connection)
             case .failed(let error):
                 print("Connection failed: \(error)")
+                self?.removeConnection(connection)
+            case .cancelled:
+                self?.removeConnection(connection)
             default:
                 break
             }
         }
+        
+        // 设置连接超时
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+            if connection.state == .ready {
+                print("Connection timeout")
+                connection.cancel()
+                self.removeConnection(connection)
+            }
+        }
+        
         connection.start(queue: .main)
+    }
+    
+    // 移除连接
+    private func removeConnection(_ connection: NWConnection) {
+        connectionLock.lock()
+        activeConnections.removeAll { $0 === connection }
+        connectionLock.unlock()
     }
     
     // 接收请求
     private func receiveRequest(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
+            if let error = error {
+                print("Receive error: \(error)")
+                self?.removeConnection(connection)
+                return
+            }
+            
             if let data = data, let request = String(data: data, encoding: .utf8) {
                 self?.processRequest(request, connection: connection)
+            } else if isComplete {
+                self?.removeConnection(connection)
             }
         }
     }
@@ -176,6 +223,8 @@ class HTTPServer {
                 try FileManager.default.createDirectory(atPath: appSupportDir, withIntermediateDirectories: true, attributes: nil)
             } catch {
                 print("Error creating directory: \(error)")
+                sendText(connection: connection, text: "Error creating directory: \(error.localizedDescription)")
+                return
             }
             
             let photoPath = appSupportDir + "/capture_\(Date().timeIntervalSince1970).jpg"
@@ -192,6 +241,7 @@ class HTTPServer {
         let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\",\"camera\":\(status)}"
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
     
@@ -225,11 +275,13 @@ class HTTPServer {
     // 流式发送帧
     private func streamFrames(connection: NWConnection, boundary: String) {
         var lastData: Data?
+        var frameCounter = 0
         
         // Send frames continuously
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+        _ = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
             guard connection.state == .ready else {
                 timer.invalidate()
+                self?.removeConnection(connection)
                 return
             }
             
@@ -245,7 +297,19 @@ class HTTPServer {
                 if var frameData = frameHeader.data(using: .utf8) {
                     frameData.append(data)
                     frameData.append("\r\n".data(using: .utf8)!)
-                    connection.send(content: frameData, completion: .contentProcessed { _ in })
+                    
+                    connection.send(content: frameData, completion: .contentProcessed { error in
+                        if let error = error {
+                            print("Send error: \(error)")
+                            timer.invalidate()
+                            self?.removeConnection(connection)
+                        }
+                    })
+                }
+                
+                frameCounter += 1
+                if frameCounter % 30 == 0 {
+                    print("Stream: \(frameCounter/30) seconds")
                 }
             }
         }
@@ -289,6 +353,7 @@ class HTTPServer {
         let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"\(status)\",\"frames\":\(frames)}"
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
     
@@ -311,17 +376,23 @@ class HTTPServer {
         """
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
     
     // 发送JPEG数据
     private func sendJpeg(data: Data, connection: NWConnection) {
         let headers = "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: \(data.count)\r\n\r\n"
-        var response = headers.data(using: .utf8)!
+        guard var response = headers.data(using: .utf8) else {
+            sendError(connection: connection, message: "Failed to create response")
+            return
+        }
+        
         response.append(data)
         
         connection.send(content: response, completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
     
@@ -330,6 +401,7 @@ class HTTPServer {
         let response = "HTTP/1.1 500 Error\r\nContent-Type: text/plain\r\n\r\n\(message)"
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
     
@@ -338,6 +410,7 @@ class HTTPServer {
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n\(text)"
         connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
             connection.cancel()
+            self.removeConnection(connection)
         })
     }
 }

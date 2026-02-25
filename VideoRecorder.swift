@@ -160,24 +160,28 @@ class VideoRecorder {
         
         if let frame = cameraManager.getCurrentFrame() {
             // Apply face detection to frame
-            let frameWithFaces = imageProcessor.applyImageEnhancement(frame)
-            
-            // Convert CIImage to CVPixelBuffer
-            if let pixelBuffer = convertToPixelBuffer(frameWithFaces) {
-                let presentationTime = CMTime(value: CMTimeValue(captureFrameCount), timescale: 30)
+            do {
+                let frameWithFaces = try imageProcessor.applyImageEnhancement(frame)
                 
-                if recordingStartTime == nil {
-                    recordingStartTime = presentationTime
-                }
-                
-                let timeSinceStart = CMTimeSubtract(presentationTime, recordingStartTime!)
-                
-                if pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: timeSinceStart) == true {
-                    captureFrameCount += 1
-                    if captureFrameCount % 30 == 0 {
-                        print("Recording: \(captureFrameCount/30) seconds...")
+                // Convert CIImage to CVPixelBuffer
+                if let pixelBuffer = convertToPixelBuffer(frameWithFaces) {
+                    let presentationTime = CMTime(value: CMTimeValue(captureFrameCount), timescale: 30)
+                    
+                    if recordingStartTime == nil {
+                        recordingStartTime = presentationTime
+                    }
+                    
+                    let timeSinceStart = CMTimeSubtract(presentationTime, recordingStartTime!)
+                    
+                    if pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: timeSinceStart) == true {
+                        captureFrameCount += 1
+                        if captureFrameCount % 30 == 0 {
+                            print("Recording: \(captureFrameCount/30) seconds...")
+                        }
                     }
                 }
+            } catch {
+                print("Error processing frame: \(error)")
             }
         }
     }

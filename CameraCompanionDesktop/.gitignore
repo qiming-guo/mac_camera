@@ -24,3 +24,15 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# 图片资源
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Trae 相关
+.trae/
