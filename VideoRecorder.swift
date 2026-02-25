@@ -39,7 +39,18 @@ class VideoRecorder {
         captureFrameCount = 0
         recordingStartTime = nil
         
-        let outputPath = NSHomeDirectory() + "/Desktop/recording.mp4"
+        // 使用应用支持目录，与照片保存路径一致
+        let supportDir = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first ?? NSHomeDirectory()
+        let appSupportDir = supportDir + "/CameraCompanion"
+        
+        // 创建目录如果不存在
+        do {
+            try FileManager.default.createDirectory(atPath: appSupportDir, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            print("Error creating directory: \(error)")
+        }
+        
+        let outputPath = appSupportDir + "/recording_\(Date().timeIntervalSince1970).mp4"
         
         // Remove existing file
         try? FileManager.default.removeItem(atPath: outputPath)
@@ -117,7 +128,10 @@ class VideoRecorder {
             guard let self = self else { return }
             
             DispatchQueue.main.async {
-                let outputPath = NSHomeDirectory() + "/Desktop/recording.mp4"
+                // 使用应用支持目录，与照片保存路径一致
+                let supportDir = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first ?? NSHomeDirectory()
+                let appSupportDir = supportDir + "/CameraCompanion"
+                let outputPath = appSupportDir + "/recording_\(Date().timeIntervalSince1970).mp4"
                 
                 if self.assetWriter?.status == .completed {
                     print("Video saved: \(outputPath)")
@@ -125,7 +139,7 @@ class VideoRecorder {
                     // Open Finder to show the file
                     NSWorkspace.shared.selectFile(outputPath, inFileViewerRootedAtPath: "")
                     
-                    self.showNotification(title: "录像完成", body: "视频已保存到桌面: recording.mp4")
+                    self.showNotification(title: "录像完成", body: "视频已保存到: \(outputPath)")
                 } else {
                     print("Error saving video: \(self.assetWriter?.error?.localizedDescription ?? "unknown")")
                     self.showNotification(title: "录像失败", body: self.assetWriter?.error?.localizedDescription ?? "未知错误")

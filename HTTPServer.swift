@@ -167,9 +167,20 @@ class HTTPServer {
         }
         
         if let frame = cameraManager.getCurrentFrame() {
-            let desktopPath = NSHomeDirectory() + "/Desktop/recording.jpg"
-            imageProcessor.saveImage(frame, path: desktopPath, quality: 0.95)
-            sendText(connection: connection, text: "Photo saved to Desktop/recording.jpg")
+            // 使用应用支持目录而不是桌面，避免权限问题
+            let supportDir = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first ?? NSHomeDirectory()
+            let appSupportDir = supportDir + "/CameraCompanion"
+            
+            // 创建目录如果不存在
+            do {
+                try FileManager.default.createDirectory(atPath: appSupportDir, withIntermediateDirectories: true, attributes: nil)
+            } catch {
+                print("Error creating directory: \(error)")
+            }
+            
+            let photoPath = appSupportDir + "/capture_\(Date().timeIntervalSince1970).jpg"
+            imageProcessor.saveImage(frame, path: photoPath, quality: 0.95)
+            sendText(connection: connection, text: "Photo saved to: \(photoPath)")
         } else {
             sendText(connection: connection, text: "No frame available")
         }
