@@ -100,8 +100,8 @@ curl -s http://localhost:8999/status
 
 ## 输出文件
 
-- 照片: 通过 HTTP 响应获取，需手动保存
-- 录像: `~/Desktop/recording.mp4`
+- 照片: 通过 HTTP 响应获取，需手动保存，或通过 `/record` 接口自动保存到 `~/Library/Application Support/CameraCompanion/` 目录
+- 录像: `~/Library/Application Support/CameraCompanion/recording_时间戳.mp4`
 
 ## 注意事项
 
