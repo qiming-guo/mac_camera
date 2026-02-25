@@ -24,3 +24,7 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# 其他
+FaceLibs/*.jpg
+
