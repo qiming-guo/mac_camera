@@ -18,8 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var httpServer: NWListener?
     var videoOutput: AVCaptureVideoDataOutput?
     var currentFrame: CIImage?
-    let capturePath = "/Users/chinny/.openclaw/capture.jpg"
-    let videoStreamPath = "/Users/chinny/.openclaw/stream.mjpg"
+    var currentStreamData: Data?
+    var currentCaptureData: Data?
+    let capturePath = NSHomeDirectory() + "/Desktop/capture.jpg"
     let frameLock = NSLock()
     
     // Video recording
@@ -150,7 +151,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func capturePhoto() {
         frameLock.lock()
         if let frame = currentFrame {
-            saveEnhancedImage(frame)
+            // Convert frame to JPEG data in memory
+            let context = CIContext()
+            
+            // Light enhancement - more natural
+            let colorFilter = CIFilter(name: "CIColorControls")
+            colorFilter?.setValue(frame, forKey: kCIInputImageKey)
+            colorFilter?.setValue(0.05, forKey: kCIInputBrightnessKey)
+            colorFilter?.setValue(1.05, forKey: kCIInputContrastKey)
+            colorFilter?.setValue(1.0, forKey: kCIInputSaturationKey)
+            
+            guard var adjustedImage = colorFilter?.outputImage else {
+                frameLock.unlock()
+                return
+            }
+            
+            // Detect and draw face bounding boxes
+            adjustedImage = detectAndDrawFaces(in: adjustedImage)
+            
+            // Light sharpening
+            let sharpenFilter = CIFilter(name: "CISharpenLuminance")
+            sharpenFilter?.setValue(adjustedImage, forKey: kCIInputImageKey)
+            sharpenFilter?.setValue(0.3, forKey: kCIInputSharpnessKey)
+            
+            guard let finalImage = sharpenFilter?.outputImage else {
+                frameLock.unlock()
+                return
+            }
+            
+            guard let cgImage = context.createCGImage(finalImage, from: finalImage.extent) else {
+                frameLock.unlock()
+                return
+            }
+            
+            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            
+            if let tiffData = nsImage.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.95]) {
+                currentCaptureData = jpegData
+                print("Photo captured in memory at \(Date())")
+            }
         }
         frameLock.unlock()
     }
@@ -387,7 +428,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func saveFrameForStream() {
         frameLock.lock()
         if let frame = currentFrame {
-            saveEnhancedImage(frame, path: videoStreamPath, quality: 0.5)
+            // Convert frame to JPEG data in memory
+            let context = CIContext()
+            
+            // Light enhancement - more natural
+            let colorFilter = CIFilter(name: "CIColorControls")
+            colorFilter?.setValue(frame, forKey: kCIInputImageKey)
+            colorFilter?.setValue(0.05, forKey: kCIInputBrightnessKey)
+            colorFilter?.setValue(1.05, forKey: kCIInputContrastKey)
+            colorFilter?.setValue(1.0, forKey: kCIInputSaturationKey)
+            
+            guard var adjustedImage = colorFilter?.outputImage else {
+                frameLock.unlock()
+                return
+            }
+            
+            // Detect and draw face bounding boxes
+            adjustedImage = detectAndDrawFaces(in: adjustedImage)
+            
+            // Light sharpening
+            let sharpenFilter = CIFilter(name: "CISharpenLuminance")
+            sharpenFilter?.setValue(adjustedImage, forKey: kCIInputImageKey)
+            sharpenFilter?.setValue(0.3, forKey: kCIInputSharpnessKey)
+            
+            guard let finalImage = sharpenFilter?.outputImage else {
+                frameLock.unlock()
+                return
+            }
+            
+            guard let cgImage = context.createCGImage(finalImage, from: finalImage.extent) else {
+                frameLock.unlock()
+                return
+            }
+            
+            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            
+            if let tiffData = nsImage.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiffData),
+               let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.5]) {
+                currentStreamData = jpegData
+                print("Stream frame saved in memory at \(Date())")
+            }
+        } else {
+            print("No current frame available for stream")
         }
         frameLock.unlock()
     }
@@ -424,7 +507,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let tiffData = nsImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]) {
-            try? jpegData.write(to: URL(fileURLWithPath: savePath))
+            do {
+                try jpegData.write(to: URL(fileURLWithPath: savePath))
+                print("Image saved successfully: \(savePath)")
+            } catch {
+                print("Error saving image to \(savePath): \(error)")
+            }
+        } else {
+            print("Failed to create JPEG data for \(savePath)")
         }
     }
     
@@ -548,20 +638,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         capturePhoto()
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            let fileManager = FileManager.default
-            if let data = fileManager.contents(atPath: self?.capturePath ?? "") {
+            self?.frameLock.lock()
+            if let data = self?.currentCaptureData {
+                self?.frameLock.unlock()
                 self?.sendJpeg(data: data, connection: connection)
             } else {
+                self?.frameLock.unlock()
                 self?.sendError(connection: connection, message: "Capture failed")
             }
         }
     }
     
     func sendVideoFrame(connection: NWConnection) {
-        let fileManager = FileManager.default
-        if let data = fileManager.contents(atPath: videoStreamPath) {
+        frameLock.lock()
+        if let data = currentStreamData {
+            frameLock.unlock()
             sendJpeg(data: data, connection: connection)
         } else {
+            frameLock.unlock()
             sendError(connection: connection, message: "No frame available")
         }
     }
@@ -581,7 +675,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func streamFrames(connection: NWConnection, boundary: String) {
-        let fileManager = FileManager.default
         var lastData: Data?
         
         // Send frames continuously
@@ -591,7 +684,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             
-            if let data = fileManager.contents(atPath: self?.videoStreamPath ?? ""), data != lastData {
+            self?.frameLock.lock()
+            let currentData = self?.currentStreamData
+            self?.frameLock.unlock()
+            
+            if let data = currentData, data != lastData {
                 lastData = data
                 
                 let frameHeader = "--\(boundary)\r\nContent-Type: image/jpeg\r\nContent-Length: \(data.count)\r\n\r\n"
