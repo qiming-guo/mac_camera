@@ -180,7 +180,7 @@ class ImageProcessor {
                 let faceHeight = boundingBox.height * imageHeight
                 
                 // 识别人脸
-                let personName = identifyPerson(face: face)
+                let personInfo = identifyPerson(face: face)
                 
                 // Draw green border around face
                 let borderWidth: CGFloat = max(4.0, faceWidth * 0.02) // 减小边框宽度以减少内存使用
@@ -189,9 +189,15 @@ class ImageProcessor {
                 // 绘制边框
                 resultImage = drawBorderAroundFace(in: resultImage, x: x, y: y, width: faceWidth, height: faceHeight, borderWidth: borderWidth, color: green)
                 
-                // 如果识别出人物，在边框上方显示人名
-                if let name = personName {
-                    resultImage = drawText(in: resultImage, text: name, x: x, y: y - 20, width: faceWidth, color: green)
+                // 如果识别出人物，在边框上方显示人名和相似度
+                if let (name, score) = personInfo {
+                    // 计算相似度百分比（将分数映射到 0-100%）
+                    // 根据实际观察到的score范围（0.1-1.0）进行百分化
+                    // 使用更合理的映射，将0.1作为0%，1.0作为100%
+                    let normalizedScore = max(0, min(1, (score - 0.1) / 0.9)) // 归一化到0-1范围
+                    let percentage = Int(normalizedScore * 100)
+                    let displayText = "\(name) (\(percentage)%)"
+                    resultImage = drawText(in: resultImage, text: displayText, x: x, y: y - 20, width: faceWidth, color: green)
                 }
             }
         } catch {
@@ -203,7 +209,7 @@ class ImageProcessor {
     }
     
     // 识别人脸
-    private func identifyPerson(face: VNFaceObservation) -> String? {
+    private func identifyPerson(face: VNFaceObservation) -> (String, Double)? {
         // 简单的人脸识别逻辑：比较人脸框的位置和大小
         // 在实际应用中，应该使用更复杂的人脸识别算法
         
@@ -260,7 +266,7 @@ class ImageProcessor {
         // 降低阈值，提高识别成功率
         if bestScore > 0.1 { // 进一步降低阈值以提高识别成功率
             print("Returning match: \(bestMatch!)")
-            return bestMatch
+            return (bestMatch!, bestScore)
         }
         
         print("No match found")
