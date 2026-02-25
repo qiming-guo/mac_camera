@@ -721,7 +721,6 @@ extension AppDelegate: AVCaptureVideoDataOutputSampleBufferDelegate {
         return resultImage
     }
 }
-}
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
